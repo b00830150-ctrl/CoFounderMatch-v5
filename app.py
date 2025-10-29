@@ -1,86 +1,138 @@
 import streamlit as st
-import json
-from sentence_transformers import SentenceTransformer, util
 import pandas as pd
-import plotly.express as px
+import numpy as np
+from sentence_transformers import SentenceTransformer, util
+import matplotlib.pyplot as plt
+import openai
 
-# ---- Setup ----
-st.set_page_config(page_title="CoFounderMatch V3", layout="wide")
-st.title("CoFounderMatch V3 🚀")
+# -------------------------
+# CONFIGURATION
+# -------------------------
+st.set_page_config(page_title="🤝 CoFounderMatch", page_icon="🤝", layout="wide")
 
-# Charger profils existants
-try:
-    with open("profiles.json", "r") as f:
-        profiles = json.load(f)
-except FileNotFoundError:
-    profiles = []
+openai.api_key = st.secrets.get("OPENAI_API_KEY")
 
-# ---- Ajouter profil ----
-with st.form("add_profile"):
-    st.subheader("Ajoute ton profil")
-    name = st.text_input("Nom")
-    description = st.text_area("Description courte")
-    skills = st.text_input("Compétences (séparées par des virgules)")
-    goals = st.text_input("Objectifs")
-    submitted = st.form_submit_button("Ajouter mon profil")
+# -------------------------
+# DATA + MODEL
+# -------------------------
+model = SentenceTransformer("all-MiniLM-L6-v2")
 
-    if submitted:
-        profile = {
-            "name": name,
-            "description": description,
-            "skills": [s.strip() for s in skills.split(",")],
-            "goals": goals
-        }
-        profiles.append(profile)
-        with open("profiles.json", "w") as f:
-            json.dump(profiles, f, indent=4)
-        st.success(f"Profil de {name} ajouté !")
+profiles = [
+    {"name": "Alice", "skills": "AI, data science, Python, research", "personality": "analytical, introverted, reliable", "domain": "tech", "strengths": [8, 7, 6, 9, 5, 6, 8, 7], "email": "alice@example.com"},
+    {"name": "Ben", "skills": "marketing, branding, storytelling, design", "personality": "creative, extroverted, energetic", "domain": "marketing", "strengths": [5, 9, 8, 6, 7, 7, 8, 6], "email": "ben@example.com"},
+    {"name": "Chloe", "skills": "finance, strategy, fundraising, management", "personality": "structured, ambitious, calm", "domain": "business", "strengths": [9, 7, 6, 8, 5, 8, 6, 9], "email": "chloe@example.com"},
+    {"name": "David", "skills": "software engineering, backend, AI, product", "personality": "logical, humble, focused", "domain": "tech", "strengths": [8, 6, 9, 7, 5, 8, 7, 6], "email": "david@example.com"},
+    {"name": "Emma", "skills": "UX, communication, product design", "personality": "empathetic, visionary, adaptable", "domain": "design", "strengths": [6, 8, 7, 6, 9, 7, 8, 7], "email": "emma@example.com"},
+]
 
-# ---- Matchmaking ----
-st.subheader("Matchs possibles")
-if profiles:
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    current_user = st.selectbox("Choisis ton profil pour matcher", [p['name'] for p in profiles])
-    
-    user_profile = next(p for p in profiles if p['name'] == current_user)
-    user_embedding = model.encode(user_profile['description'])
+profiles_df = pd.DataFrame(profiles)
 
-    matches = []
-    for p in profiles:
-        if p['name'] != current_user:
-            score = util.cos_sim(user_embedding, model.encode(p['description'])).item()
-            matches.append({"name": p['name'], "score": score, "skills": p['skills']})
+# -------------------------
+# USER INTERFACE
+# -------------------------
+st.title("🤝 CoFounderMatch — Find Your Perfect Startup Partner")
 
-    matches = sorted(matches, key=lambda x: x['score'], reverse=True)
+st.sidebar.header("🎯 Your Profile")
 
-    for m in matches:
-        st.write(f"**{m['name']}** - Compatibilité: {m['score']:.2f}")
-        st.write("Compétences :", ", ".join(m['skills']))
+your_name = st.sidebar.text_input("Your name:")
+your_email = st.sidebar.text_input("Your email address:")
+your_skills = st.sidebar.text_area("Your skills and experience:")
+your_personality = st.sidebar.text_area("Your personality and working style:")
+your_domain = st.sidebar.selectbox("Your main domain:", ["tech", "marketing", "business", "design", "other"])
 
-    # ---- Graphique radar ----
-    st.subheader("Radar de compétences")
-    if matches:
-        all_skills = list({skill for m in matches for skill in m['skills']})
-        df = pd.DataFrame(0, index=[m['name'] for m in matches], columns=all_skills)
-        for m in matches:
-            for skill in m['skills']:
-                df.at[m['name'], skill] = 1
-        fig = px.line_polar(df.reset_index(), r=df.values.flatten(), theta=df.columns.tolist()*len(df),
-                            line_close=True, markers=True)
-        st.plotly_chart(fig)
+st.sidebar.markdown("### 🧩 Rate your key strengths (1–10)")
+your_strengths = [
+    st.sidebar.slider("Technical expertise", 1, 10, 7),
+    st.sidebar.slider("Creativity", 1, 10, 7),
+    st.sidebar.slider("Teamwork", 1, 10, 7),
+    st.sidebar.slider("Leadership", 1, 10, 7),
+    st.sidebar.slider("Empathy", 1, 10, 7),
+    st.sidebar.slider("Adaptability", 1, 10, 7),
+    st.sidebar.slider("Strategic thinking", 1, 10, 7),
+    st.sidebar.slider("Communication", 1, 10, 7),
+]
 
-# ---- Chat interne ----
-st.subheader("Chat interne")
-chat_with = st.selectbox("Choisis avec qui chatter", [p['name'] for p in profiles if p['name'] != current_user] if profiles else [])
+# -------------------------
+# SAVE USER IN DATABASE
+# -------------------------
+if your_name and your_skills and your_personality:
+    new_profile = {
+        "name": your_name,
+        "skills": your_skills,
+        "personality": your_personality,
+        "domain": your_domain,
+        "strengths": your_strengths,
+        "email": your_email or "N/A",
+    }
 
-# Charger messages existants
-try:
-    with open("messages.json", "r") as f:
-        messages = json.load(f)
-except FileNotFoundError:
-    messages = []
+    if your_name not in profiles_df["name"].values:
+        profiles_df.loc[len(profiles_df)] = new_profile
 
-# Message de succès (optionnel)
-if 'message' in locals():
-    st.success(message)
+# -------------------------
+# MATCHING
+# -------------------------
+if st.sidebar.button("🔍 Find Matches"):
+    if your_skills.strip() == "" or your_personality.strip() == "":
+        st.warning("⚠️ Please fill in your skills and personality!")
+    else:
+        your_text = your_skills + " " + your_personality
+        your_embedding = model.encode(your_text, convert_to_tensor=True)
 
+        profiles_df["similarity"] = profiles_df.apply(
+            lambda row: util.cos_sim(
+                your_embedding,
+                model.encode(row["skills"] + " " + row["personality"], convert_to_tensor=True)
+            ).item(),
+            axis=1
+        )
+
+        results = profiles_df.sort_values(by="similarity", ascending=False).reset_index(drop=True)
+
+        st.subheader("💡 Your Top Matches")
+
+        for _, row in results.iterrows():
+            with st.expander(f"👤 {row['name']} — {row['domain'].capitalize()} ({row['similarity']:.2f})"):
+                st.write(f"**Skills:** {row['skills']}")
+                st.write(f"**Personality:** {row['personality']}")
+                st.write(f"**Email contact:** {row['email']}")
+
+                # --- Radar Chart ---
+                labels = [
+                    "Technical", "Creativity", "Teamwork", "Leadership",
+                    "Empathy", "Adaptability", "Strategy", "Communication"
+                ]
+                user_values = np.array(your_strengths)
+                match_values = np.array(row["strengths"])
+
+                angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
+                user_values = np.concatenate((user_values, [user_values[0]]))
+                match_values = np.concatenate((match_values, [match_values[0]]))
+                angles += angles[:1]
+
+                fig, ax = plt.subplots(figsize=(4, 4), subplot_kw=dict(polar=True))
+                ax.plot(angles, user_values, label="You", linewidth=2)
+                ax.fill(angles, user_values, alpha=0.25)
+                ax.plot(angles, match_values, label=row["name"], linewidth=2)
+                ax.fill(angles, match_values, alpha=0.25)
+                ax.set_xticks(angles[:-1])
+                ax.set_xticklabels(labels)
+                ax.legend(loc="upper right", bbox_to_anchor=(1.2, 1.1))
+                st.pyplot(fig)
+
+                # --- OpenAI Summary ---
+                if openai.api_key:
+                    prompt = f"Summarize in 2 sentences why {your_name or 'You'} and {row['name']} would make great cofounders based on their skills and personalities."
+                    try:
+                        response = openai.ChatCompletion.create(
+                            model="gpt-4o-mini",
+                            messages=[
+                                {"role": "system", "content": "You are a startup mentor."},
+                                {"role": "user", "content": prompt},
+                            ],
+                        )
+                        summary = response["choices"][0]["message"]["content"]
+                        st.info(f"🧠 Compatibility summary:\n{summary}")
+                    except Exception as e:
+                        st.warning(f"Could not generate AI summary: {e}")
+                else:
+                    st.warning("🔑 Add your OpenAI key in Streamlit secrets to enable AI insights.")

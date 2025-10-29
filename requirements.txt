@@ -1,5 +1,7 @@
 streamlit
+pandas
+numpy
+matplotlib
 sentence-transformers
 torch
-pandas
-plotly
+openai
