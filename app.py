@@ -12,18 +12,34 @@ st.set_page_config(page_title="🤝 CoFounderMatch", page_icon="🤝", layout="w
 openai.api_key = st.secrets.get("OPENAI_API_KEY")
 
 # -------------------------
-# PREDEFINED PROFILES
+# MODEL
 # -------------------------
-profiles = [
-    {"name": "Alice", "skills": "AI, data science, Python, research", "personality": "analytical, introverted, reliable", "domain": "tech", "strengths": [8,7,6,9,5,6,8,7], "email": "alice@example.com"},
-    {"name": "Ben", "skills": "marketing, branding, storytelling, design", "personality": "creative, extroverted, energetic", "domain": "marketing", "strengths": [5,9,8,6,7,7,8,6], "email": "ben@example.com"},
-    {"name": "Chloe", "skills": "finance, strategy, fundraising, management", "personality": "structured, ambitious, calm", "domain": "business", "strengths": [9,7,6,8,5,8,6,9], "email": "chloe@example.com"},
-    {"name": "David", "skills": "software engineering, backend, AI, product", "personality": "logical, humble, focused", "domain": "tech", "strengths": [8,6,9,7,5,8,7,6], "email": "david@example.com"},
-    {"name": "Emma", "skills": "UX, communication, product design", "personality": "empathetic, visionary, adaptable", "domain": "design", "strengths": [6,8,7,6,9,7,8,7], "email": "emma@example.com"},
+model = SentenceTransformer("all-MiniLM-L6-v2")
+
+# -------------------------
+# DEFAULT PROFILES
+# -------------------------
+default_profiles = [
+    {"name": "Alice", "skills": "AI, data science, Python, research",
+     "personality": "analytical, introverted, reliable", "domain": "tech",
+     "strengths": [8,7,6,9,5,6,8,7], "email": "alice@example.com"},
+    {"name": "Ben", "skills": "marketing, branding, storytelling, design",
+     "personality": "creative, extroverted, energetic", "domain": "marketing",
+     "strengths": [5,9,8,6,7,7,8,6], "email": "ben@example.com"},
+    {"name": "Chloe", "skills": "finance, strategy, fundraising, management",
+     "personality": "structured, ambitious, calm", "domain": "business",
+     "strengths": [9,7,6,8,5,8,6,9], "email": "chloe@example.com"},
+    {"name": "David", "skills": "software engineering, backend, AI, product",
+     "personality": "logical, humble, focused", "domain": "tech",
+     "strengths": [8,6,9,7,5,8,7,6], "email": "david@example.com"},
+    {"name": "Emma", "skills": "UX, communication, product design",
+     "personality": "empathetic, visionary, adaptable", "domain": "design",
+     "strengths": [6,8,7,6,9,7,8,7], "email": "emma@example.com"},
 ]
 
-# Convert to DataFrame
-profiles_df = pd.DataFrame(profiles)
+# Initialize session profiles
+if "profiles" not in st.session_state:
+    st.session_state.profiles = default_profiles.copy()
 
 # -------------------------
 # USER INTERFACE
@@ -31,47 +47,42 @@ profiles_df = pd.DataFrame(profiles)
 st.title("🤝 CoFounderMatch — Find Your Perfect Startup Partner")
 
 st.sidebar.header("🎯 Your Profile")
+your_name = st.sidebar.text_input("Your name")
+your_email = st.sidebar.text_input("Your email")
+your_skills = st.sidebar.text_area("Your skills and experience")
+your_personality = st.sidebar.text_area("Your personality and working style")
+your_domain = st.sidebar.selectbox("Your main domain", ["tech","marketing","business","design","other"])
 
-# Form to add a new profile (only in current session)
-with st.sidebar.form("add_profile"):
-    your_name = st.text_input("Your name")
-    your_email = st.text_input("Your email address")
-    your_skills = st.text_area("Your skills and experience")
-    your_personality = st.text_area("Your personality and working style")
-    your_domain = st.selectbox("Your main domain", ["tech","marketing","business","design","other"])
-    
-    st.markdown("### 🧩 Rate your key strengths (1–10)")
-    your_strengths = [
-        st.slider("Technical expertise", 1, 10, 7),
-        st.slider("Creativity", 1, 10, 7),
-        st.slider("Teamwork", 1, 10, 7),
-        st.slider("Leadership", 1, 10, 7),
-        st.slider("Empathy", 1, 10, 7),
-        st.slider("Adaptability", 1, 10, 7),
-        st.slider("Strategic thinking", 1, 10, 7),
-        st.slider("Communication", 1, 10, 7),
-    ]
-    
-    submitted = st.form_submit_button("Add Profile")
-    if submitted:
-        if your_name and your_email and your_skills and your_personality:
-            new_profile = {
-                "name": your_name,
-                "skills": your_skills,
-                "personality": your_personality,
-                "domain": your_domain,
-                "strengths": your_strengths,
-                "email": your_email
-            }
-            profiles_df = pd.concat([profiles_df, pd.DataFrame([new_profile])], ignore_index=True)
-            st.success(f"✅ {your_name} added! Everyone can see it (for this session only).")
-        else:
-            st.warning("⚠️ Please fill in all fields.")
+st.sidebar.markdown("### 🧩 Rate your key strengths (1–10)")
+your_strengths = [
+    st.sidebar.slider("Technical expertise", 1, 10, 7),
+    st.sidebar.slider("Creativity", 1, 10, 7),
+    st.sidebar.slider("Teamwork", 1, 10, 7),
+    st.sidebar.slider("Leadership", 1, 10, 7),
+    st.sidebar.slider("Empathy", 1, 10, 7),
+    st.sidebar.slider("Adaptability", 1, 10, 7),
+    st.sidebar.slider("Strategic thinking", 1, 10, 7),
+    st.sidebar.slider("Communication", 1, 10, 7),
+]
 
 # -------------------------
-# MODEL
+# ADD USER PROFILE TO SESSION
 # -------------------------
-model = SentenceTransformer("all-MiniLM-L6-v2")
+if your_name and your_email and your_skills and your_personality:
+    existing_names = [p["name"].lower() for p in st.session_state.profiles]
+    if your_name.lower() not in existing_names:
+        st.session_state.profiles.append({
+            "name": your_name,
+            "skills": your_skills,
+            "personality": your_personality,
+            "domain": your_domain,
+            "strengths": your_strengths,
+            "email": your_email
+        })
+        st.success(f"✅ Profile for **{your_name}** has been added to the platform!")
+
+# Convert to DataFrame for matching
+profiles_df = pd.DataFrame(st.session_state.profiles)
 
 # -------------------------
 # MATCHING
@@ -95,19 +106,18 @@ if st.sidebar.button("🔍 Find Matches"):
         st.subheader("💡 Your Top Matches")
 
         for _, row in results.iterrows():
+            if row["name"].lower() == your_name.lower():
+                continue
             with st.expander(f"👤 {row['name']} — {row['domain'].capitalize()} ({row['similarity']:.2f})"):
                 st.write(f"**Skills:** {row['skills']}")
                 st.write(f"**Personality:** {row['personality']}")
                 st.write(f"**Email contact:** {row['email']}")
 
-                # --- Radar Chart ---
-                labels = [
-                    "Technical", "Creativity", "Teamwork", "Leadership",
-                    "Empathy", "Adaptability", "Strategy", "Communication"
-                ]
+                # Radar Chart
+                labels = ["Technical", "Creativity", "Teamwork", "Leadership",
+                          "Empathy", "Adaptability", "Strategy", "Communication"]
                 user_values = np.array(your_strengths)
                 match_values = np.array(row["strengths"])
-
                 angles = np.linspace(0, 2*np.pi, len(labels), endpoint=False).tolist()
                 user_values = np.concatenate((user_values,[user_values[0]]))
                 match_values = np.concatenate((match_values,[match_values[0]]))
@@ -123,16 +133,14 @@ if st.sidebar.button("🔍 Find Matches"):
                 ax.legend(loc="upper right", bbox_to_anchor=(1.2,1.1))
                 st.pyplot(fig)
 
-                # --- OpenAI Summary ---
+                # OpenAI Summary
                 if openai.api_key:
                     prompt = f"Summarize in 2 sentences why {your_name or 'You'} and {row['name']} would make great cofounders based on their skills and personalities."
                     try:
                         response = openai.ChatCompletion.create(
                             model="gpt-4o-mini",
-                            messages=[
-                                {"role": "system", "content": "You are a startup mentor."},
-                                {"role": "user", "content": prompt},
-                            ]
+                            messages=[{"role":"system","content":"You are a startup mentor."},
+                                      {"role":"user","content":prompt}]
                         )
                         summary = response["choices"][0]["message"]["content"]
                         st.info(f"🧠 Compatibility summary:\n{summary}")
@@ -142,7 +150,7 @@ if st.sidebar.button("🔍 Find Matches"):
                     st.warning("🔑 Add your OpenAI key in Streamlit secrets to enable AI insights.")
 
 # -------------------------
-# Display all profiles
+# DISPLAY ALL PROFILES
 # -------------------------
 st.subheader("🌍 All Founders")
 for _, row in profiles_df.iterrows():
